@@ -12,7 +12,7 @@ ffmpeg.setFfmpegPath(ffmpegStatic);
 const app = express();
 const PORT = 3000;
 
-//* Create and ensure the upload directory exists\ 
+//* Create and ensure the upload directory exists\
 const uploadDir = path.join(__dirname, "uploads");
 fs.ensureDirSync(uploadDir);
 
@@ -49,13 +49,17 @@ app.post("/merge", (req, res) => {
   upload(req, res, async (err) => {
     if (err) {
       //* Upload error handling
-      return res.status(500).json({ error: "Upload failed", details: err.message });
+      return res
+        .status(500)
+        .json({ error: "Upload failed", details: err.message });
     }
 
     const files = req.files;
     if (!files || files.length < 2) {
       //* Ensure at least two videos are provided
-      return res.status(400).json({ error: "Please upload at least 2 videos to merge" });
+      return res
+        .status(400)
+        .json({ error: "Please upload at least 2 videos to merge" });
     }
 
     //* Prepare a temporary concat list file for FFmpeg
@@ -64,7 +68,7 @@ app.post("/merge", (req, res) => {
     try {
       //* Generate list entries: file '/path/to/video'
       const listContent = files
-        .map(file => `file '${file.path.replace(/\\/g, "/")}'`)
+        .map((file) => `file '${file.path.replace(/\\/g, "/")}'`)
         .join("\n");
 
       await fs.writeFile(concatListPath, listContent);
@@ -76,16 +80,27 @@ app.post("/merge", (req, res) => {
       ffmpeg()
         .input(concatListPath)
         .inputOptions(["-f", "concat", "-safe", "0"])
-        .outputOptions(["-preset", "fast"])
-        .on("error", async ffErr => {
+        .outputOptions([
+          "-preset",
+          "ultrafast", // fastest (lowest CPU/memory)
+          "-vf",
+          "scale=640:-2", // downscale to 640px wide
+          "-threads",
+          "2", // limit to two threads
+          "-crf",
+          "28", // more compression → less memory
+        ])
+        .on("error", async (ffErr) => {
           //* FFmpeg processing error handling
           console.error("FFmpeg error:", ffErr);
           await cleanup(files, concatListPath, null);
-          res.status(500).json({ error: "Video merge failed", details: ffErr.message });
+          res
+            .status(500)
+            .json({ error: "Video merge failed", details: ffErr.message });
         })
         .on("end", async () => {
           //* On success, send the merged file to the client
-          res.download(outputPath, "merged.mp4", async sendErr => {
+          res.download(outputPath, "merged.mp4", async (sendErr) => {
             //* Cleanup temporary files after download
             await cleanup(files, concatListPath, outputPath);
             if (sendErr) console.error("Error sending file:", sendErr);
@@ -105,14 +120,16 @@ app.post("/merge", (req, res) => {
 async function cleanup(uploadedFiles, listFile, mergedFile) {
   try {
     for (const file of uploadedFiles) {
-      await fs.remove(file.path);    //* Remove each uploaded file
+      await fs.remove(file.path); //* Remove each uploaded file
     }
-    if (listFile) await fs.remove(listFile);  //* Remove concat list file
-    if (mergedFile) await fs.remove(mergedFile);//* Remove merged output file
+    if (listFile) await fs.remove(listFile); //* Remove concat list file
+    if (mergedFile) await fs.remove(mergedFile); //* Remove merged output file
   } catch (cleanupErr) {
     console.error("Cleanup failed:", cleanupErr);
   }
 }
 
 //* Start the server
-app.listen(PORT, () => console.log(`Video merge server listening on port ${PORT}`));
+app.listen(PORT, () =>
+  console.log(`Video merge server listening on port ${PORT}`)
+);
